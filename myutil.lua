@@ -1,16 +1,14 @@
 function reg(i) return memory.getregister("r"..i) end
+function regw(i,v) return memory.setregister("r"..i, v) end
 read8 = memory.readbyte
-read32 = memory.readdword
 read16 = memory.readword
 read32 = memory.readdword
-read16 = memory.readword
-read8s = memory.readbytesigned
 read16s = memory.readwordsigned
 read32s = memory.readdwordsigned
 
 write8 = memory.writebyte
-write32 = memory.writedword
 write16 = memory.writeword
+write32 = memory.writedword
 function read16_noalign(addr)
 	return bit.bor(read8(addr), bit.lshift(read8(addr+1), 8))
 end
@@ -117,18 +115,19 @@ function byte_array_to_string(bytes)
 	return table.concat(chars)
 end
 
-function read_memory_bytes(addr, len)
+function read_memory_bytes(addr, len, bits)
+	bits = bits or 1
 	local bytes = {}
 	for i = 0, len - 1 do
-		bytes[i+1] = memory.readbyte(addr + i)
+		if bits == 1 then
+			bytes[i+1] = read8(addr + i)
+		elseif bits == 2 then
+			bytes[i+1] = read16(addr + i * 2)
+		elseif bits == 4 then
+			bytes[i+1] = read32(addr + i * 4)
+		end
 	end
 	return bytes
-end
-
-function write_memory_bytes(addr, bytes)
-	for i = 0, #bytes - 1 do
-		write8(addr + i, bytes[i+1])
-	end
 end
 
 function read_cstr(addr)
@@ -143,12 +142,14 @@ function read_cstr(addr)
 	return table.concat(chars)
 end
 
-function inspect_bytes(bytes)
-	return table.concat(array_map(bytes, function(i) return string.format("%.2x", i) end), " ")
+function inspect_bytes(bytes, bits)
+	bits = bits or 1
+	local fmt = "%."..(bits*2).."x"
+	return table.concat(array_map(bytes, function(i) return string.format(fmt, i) end), " ")
 end
 
-function dump_memory(addr, len)
-	return inspect_bytes(read_memory_bytes(addr, len))
+function dump_memory(addr, len, bits)
+	return inspect_bytes(read_memory_bytes(addr, len, bits), bits)
 end
 
 function array_map(array, fn)
@@ -229,6 +230,10 @@ function cut_last_empty(array)
 	return array
 end
 
+function join(array, delimiter)
+	return table.concat(array, delimiter or ",")
+end
+
 function string_to_lines(str)
 	return cut_last_empty(split(str, "\r?\n", true))
 end
@@ -262,23 +267,37 @@ function inspect(o)
 	end
 end
 
-local in_trace_memory_access = false
-function trace_memory_access(addr, len, type, fn)
-	fn = fn or function(type, addr, len, p, l)
-		printf("%s %.8x+%x,%d: %s (pc=%.8x)", type, addr, p - addr, l, dump_memory(p, l), memory.getregister("curr_insn_addr"))
-	end
-	
-	memory["register"..type](addr, len, function(p, l)
-		if in_trace_memory_access then return end
-		in_trace_memory_access = true
-		fn(type, addr, len, p, l)
-		in_trace_memory_access = false
-	end)
-end
-
 function memset(addr, val, len)
 	for i = 0, len-1 do
 		memory.writebyte(addr+i, val)
 	end
 end
 
+function W(addr, size)
+  memory.registerwrite(addr, size or 4, function(p, l)
+    printf("written %.8x %s (pc=%.8x)", addr, dump_memory(p, l), PC())
+  end)
+end
+
+function E(addr, fn)
+  memory.registerexec(addr, fn)
+end
+
+function start_debug()
+  function fn()
+    local addr = memory.getregister("curr_insn_addr")
+    local thumb = is_thumb_state()
+    if thumb then
+      emu.disasm(addr - 2, thumb) -- blñΩóﬂÇÃîÚÇ—êÊÇê≥ÇµÇ≠ï\é¶Ç∑ÇÈÇΩÇﬂ
+    end
+    print(string.format("%.8x %s", addr, emu.disasm(addr, is_thumb_state())))
+    emu.pause()
+  end
+  print("start_debug")
+  memory.registerexec(0x02000000, 0x00400000, fn)
+  fn()
+end
+
+function is_thumb_state()
+	return bit.band(bit.rshift(memory.getregister("cpsr"), 5), 1) ~= 0
+end
