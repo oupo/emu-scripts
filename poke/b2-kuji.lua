@@ -9,17 +9,6 @@ for k, line in pairs(string_to_lines(file_read("items.txt"))) do
   items[num] = name
 end
 
--- seed初期化
-E(0x02038028, function() printf("new seed srcaddr=%.8x val=%.8x", reg(4)+0x5c, read32(reg(4)+0x5c)) end)
-
-E(0x02036DCC, function()
-  --printf("load %.8x %d %.8x lr=%.8x", reg(0), reg(1), reg(2), reg(14))
-end)
-
-E(0x020370cc, function()
-  --printf("store %.8x %d %.8x lr=%.8x", reg(0), reg(1), reg(2), reg(14))
-end)
-
 E(0x021F41DA, function()
   printf("★ 日替わりseed決定 %.8x %.8x", reg(0), reg(5))
 end)
@@ -29,11 +18,18 @@ E(0x2037950, function()
   if 0x02000000 <= reg(2) and reg(2) <= 0x02400000 then
     str = str .. " " .. read_wide(reg(2))
   end
-  printf("通行人属性設定 %.8x %d %.8x%s", reg(0), reg(1), reg(2), str)
+  if reg(1) == 4 or reg(1) == 7 then
+    printf("通行人属性設定 %.8x %d %.8x%s lr=%.8x", reg(0), reg(1), reg(2), str, reg(14))
+  end
 end)
+
+E(0x021F4060, function()
+  printf("通行人 id=%d %.8x,%.8x,%.8x, lr=%.8x", reg(3), reg(0), reg(1), reg(2), reg(14))
+end)
+
 function read_wide(addr)
 	local chars = {}
-	local i = 0
+	, reg(3)local i = 0
 	while true do
 		local b = read16(addr+i*2)
 		if b == 0 or b == 0xffff then break end
@@ -92,12 +88,46 @@ E(0x021E59A8, function()
     print(str)
   end
   --]]
+
 end)
 
 -- アイテムindexをきめる乱数を強制書き換え
 E(0x021E59A4, function()
 	local x = 103
+	local orig = reg(2)
 	memory.setregister("r2", x)
-	printf("set! %d->%d", x)
+	printf("set! %d->%d", orig, x)
 end)
 
+E(0x021F42E0, function()
+  printf("通行人★ %.8x", reg(14))
+end)
+
+-- 通行人設定の1つ上
+E(0x021F4204, function()
+  printf("★★ %.8x %.8x %.8x %.8x", reg(0), reg(1), reg(2), reg(3))
+end)
+
+-- 通行人設定でループのあるところ
+E(0x021F0180, function()
+  printf("★★★")
+end)
+-- 決まる通行人ID
+E(0x021F42A6, function()
+  --printf("■%d", reg(5))
+end)
+
+E(0x020390c4, function()
+	printf("■通行人決定用乱数 seed=%.8x 分母=%d 繰り返し=%d", read32(reg(0)+0xe4), reg(2), reg(1))
+end)
+
+-- 通行人用seedの変化を見る
+do
+local x
+E(0x02038FE0, function()
+	x = reg(0)
+end)
+E(0x02038FE2, function()
+	printf("通行人用seed更新 %.8x -> %.8x", x, reg(0))
+end)
+end

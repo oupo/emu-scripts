@@ -1,5 +1,5 @@
 function reg(i) return memory.getregister("r"..i) end
-function regw(i,v) return memory.setregister("r"..i, v) end
+function regw(i,v) return memory.setregister("r"..i, s32(v)) end
 read8 = memory.readbyte
 read16 = memory.readword
 read32 = memory.readdword
@@ -15,6 +15,7 @@ end
 function read32_noalign(addr)
 	return bit.bor(read16_noalign(addr), bit.lshift(read16_noalign(addr+2), 16))
 end
+s32 = bit.bor
 function PC() return memory.getregister("curr_insn_addr") end
 
 function printf(...) print(string.format(...)) end
@@ -125,6 +126,20 @@ function read_memory_bytes(addr, len, bits)
 			bytes[i+1] = read16(addr + i * 2)
 		elseif bits == 4 then
 			bytes[i+1] = read32(addr + i * 4)
+		end
+	end
+	return bytes
+end
+
+function write_memory_bytes(addr, bytes, bits)
+	bits = bits or 1
+	for i = 0, #bytes - 1 do
+		if bits == 1 then
+			write8(addr + i, bytes[i+1])
+		elseif bits == 2 then
+			write16(addr + i * 2, bytes[i+1])
+		elseif bits == 4 then
+			write32(addr + i * 4, bytes[i+1])
 		end
 	end
 	return bytes
@@ -283,19 +298,44 @@ function E(addr, fn)
   memory.registerexec(addr, fn)
 end
 
-function start_debug()
-  function fn()
-    local addr = memory.getregister("curr_insn_addr")
-    local thumb = is_thumb_state()
-    if thumb then
-      emu.disasm(addr - 2, thumb) -- bl–½—ß‚Ì”ò‚Ñæ‚ğ³‚µ‚­•\¦‚·‚é‚½‚ß
-    end
-    print(string.format("%.8x %s", addr, emu.disasm(addr, is_thumb_state())))
-    emu.pause()
-  end
-  print("start_debug")
-  memory.registerexec(0x02000000, 0x00400000, fn)
-  fn()
+do
+	local prevRegs =  {}
+
+	function remember()
+		for i = 0, 12 do
+			prevRegs[i] = reg(i)
+		end
+	end
+
+	function showDiff()
+		local buf = {}
+		for i = 0, 12 do
+			if prevRegs[i] ~= reg(i) then
+				buf[#buf+1] = string.format("r%d=%x", i, reg(i))
+			end
+		end
+		if #buf ~= 0 then
+			print(join(buf, " "))
+		end
+	end
+
+	function step()
+		showDiff()
+		remember()
+		local addr = memory.getregister("curr_insn_addr")
+		local thumb = is_thumb_state()
+		if thumb then
+			emu.disasm(addr - 2, thumb) -- bl–½—ß‚Ì”ò‚Ñæ‚ğ³‚µ‚­•\¦‚·‚é‚½‚ß
+		end
+		print(string.format("%.8x %s", addr, emu.disasm(addr, is_thumb_state())))
+		emu.pause()
+	end
+	start_debug = (function ()
+		print("start_debug")
+		memory.registerexec(0x02000000, 0x00400000, step)
+		remember()
+		step()
+	end)
 end
 
 function is_thumb_state()
