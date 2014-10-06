@@ -315,11 +315,33 @@ do
 			end
 		end
 		if #buf ~= 0 then
-			print(join(buf, " "))
+			print(" ; " .. join(buf, " "))
 		end
 	end
 
+	local stack = {}
+
+	function stackPush()
+		stack[#stack+1] = {reg(13), PC()}
+	end
+
+	function stackCheck()
+		if #stack == 0 then return end
+		local lastSp, lastPc = stack[#stack][1], stack[#stack][2]
+		if lastSp == reg(13) and PC() == lastPc + 2 then
+			table.remove(stack)
+		end
+	end
+
+	function indent()
+		return string.rep("-", #stack)
+	end
+
+	local special = {}
+	special[0x02037818] = true
+
 	function step()
+		stackCheck()
 		showDiff()
 		remember()
 		local addr = memory.getregister("curr_insn_addr")
@@ -327,7 +349,11 @@ do
 		if thumb then
 			emu.disasm(addr - 2, thumb) -- bl–½—ß‚Ì”ò‚Ñæ‚ğ³‚µ‚­•\¦‚·‚é‚½‚ß
 		end
-		print(string.format("%.8x %s", addr, emu.disasm(addr, is_thumb_state())))
+		local disasm = emu.disasm(addr, is_thumb_state())
+		printf("%s%.8x %s%s", indent(), addr, disasm, special[addr] and "š" or "")
+		if string.find(disasm, "bl ") then
+			stackPush()
+		end
 		emu.pause()
 	end
 	start_debug = (function ()
