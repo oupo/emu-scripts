@@ -19,6 +19,16 @@ s32 = bit.bor
 function PC() return memory.getregister("curr_insn_addr") end
 
 function printf(...) print(string.format(...)) end
+
+
+function W(addr, size)
+  memory.registerwrite(addr, size or 4, function(p, l)
+    printf("written %.8x %s (pc=%.8x)", addr, dump_memory(p, l), PC())
+  end)
+end
+
+E = memory.registerexec
+
 function registerexec_all(addrs, fn)
 	for k, addr in pairs(addrs) do
 		memory.registerexec(addr, fn)
@@ -145,10 +155,10 @@ function write_memory_bytes(addr, bytes, bits)
 	return bytes
 end
 
-function read_cstr(addr)
+function read_cstr(addr, max)
 	local chars = {}
 	local i = 0
-	while true do
+	while i < max or not max do
 		local b = read8(addr+i)
 		if b == 0 then break end
 		chars[i+1] = string.char(b)
@@ -288,16 +298,6 @@ function memset(addr, val, len)
 	end
 end
 
-function W(addr, size)
-  memory.registerwrite(addr, size or 4, function(p, l)
-    printf("written %.8x %s (pc=%.8x)", addr, dump_memory(p, l), PC())
-  end)
-end
-
-function E(addr, fn)
-  memory.registerexec(addr, fn)
-end
-
 do
 	local prevRegs =  {}
 
@@ -366,4 +366,8 @@ end
 
 function is_thumb_state()
 	return bit.band(bit.rshift(memory.getregister("cpsr"), 5), 1) ~= 0
+end
+
+function get_cpsr_mode()
+	return bit.band(memory.getregister("cpsr"), 31)
 end
